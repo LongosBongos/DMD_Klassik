@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>DMD Mini dApp</title>
+<style>
+  :root{--gold1:#f7e9a3;--gold2:#f1c55f;--gold3:#d9a441;--ink:#131313;--muted:#666}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,Arial,Roboto,sans-serif;color:var(--ink);
+       background:radial-gradient(circle at 20% 20%,var(--gold1),var(--gold2) 40%,var(--gold3) 85%);min-height:100vh;padding:16px}
+  .wrap{max-width:960px;margin:0 auto}
+  .card{background:rgba(255,255,255,.85);border:1px solid rgba(0,0,0,.08);border-radius:14px;padding:14px;margin:10px 0}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
+  input,select{padding:9px 10px;border:1px solid #ccc;border-radius:10px;min-width:260px;max-width:100%}
+  button{padding:10px 14px;border:0;border-radius:12px;background:#1b1b1b;color:#fff;cursor:pointer}
+  button.ghost{background:#fff;color:#1b1b1b;border:1px solid #ccc}
+  button.warn{background:#a35100}
+  .muted{color:var(--muted);font-size:.92em}
+  #log{background:#0b1020;color:#cde3ff;padding:12px;border-radius:10px;min-height:120px;white-space:pre-wrap}
+  .badge{padding:4px 8px;border-radius:999px;background:#fff;border:1px solid #ccc;font-size:.85em}
+</style>
+<script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
+<script src="https://unpkg.com/@coral-xyz/anchor@0.29.0/dist/browser/index.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <h1>Die Mark Digital – Mini dApp</h1>
+
+  <div class="card">
+    <div class="row">
+      <label>RPC</label>
+      <input id="rpc" value="https://mainnet.helius-rpc.com/?api-key=YOUR_KEY" />
+      <button id="btnSetRpc">Verbinden</button>
+    </div>
+    <div class="row">
+      <label>Program ID</label>
+      <input id="programId" value="EDY4bp4fXWkAJpJhXUMZLL7fjpDhpKZQFPpygzsTMzro" />
+    </div>
+    <div class="row">
+      <label>DMD Mint</label>
+      <input id="mint" value="3W8wtdW8pA8eUfUMJrCnJh9Dto8rc23nfQRJamuh1AWb" />
+    </div>
+    <div class="row">
+      <label>Founder</label>
+      <input id="founderPk" value="AqPFb5LWQuzKiyoKTX9XgUwsYWoFvpeE8E8uzQvnDTzT" />
+    </div>
+    <div class="row">
+      <label>Treasury</label>
+      <input id="treasuryPk" value="CEUmazdgtbUCcQyLq6NCm4BuQbvCsYFzKsS5wdRvZehV" />
+    </div>
+    <div class="muted">IDL: initialize/buy_dmd/sell_dmd/claim_reward/toggle_public_sale/whitelist_add (Seeds: "vault", "buyer").</div>
+  </div>
+
+  <div class="card">
+    <h3>Wallet</h3>
+    <div class="row">
+      <button id="btnDetect" class="ghost">Wallets erkennen</button><span id="detected" class="muted">–</span>
+    </div>
+    <div class="row">
+      <button id="btnConnect">Wallet verbinden</button><span id="walletLabel" class="muted">Nicht verbunden</span>
+    </div>
+    <div class="row">
+      <button id="btnRole" class="ghost">Rolle prüfen</button><span id="roleBadge" class="badge">–</span>
+    </div>
+    <div class="row">
+      <button id="btnShowPdas" class="ghost">PDAs anzeigen</button><span id="pdas" class="muted">–</span>
+    </div>
+  </div>
+
+  <div class="card" id="adminCard" style="display:none">
+    <h3>Founder</h3>
+    <div class="row">
+      <button id="btnOpenSale">Public Sale öffnen</button>
+      <button id="btnCloseSale" class="warn">Public Sale schließen</button>
+    </div>
+    <div class="row">
+      <label>Whitelist Wallet</label><input id="wlAddress" placeholder="Base58" />
+      <select id="wlStatus"><option value="true">aktiv</option><option value="false">deaktiv</option></select>
+      <button id="btnWhitelistAdd">Setzen</button>
+    </div>
+    <div class="row">
+      <label>Initialpreis (Lamports/SOL)</label><input id="initPrice" type="number" value="1000000000" />
+      <button id="btnInitialize" class="ghost">Vault initialisieren</button>
+    </div>
+    <div class="muted">Hinweis: KAUF erfordert aktuell ebenfalls Founder-Signatur (siehe Warnung unten).</div>
+  </div>
+
+  <div class="card">
+    <h3>Buy / Sell / Claim</h3>
+    <div class="row">
+      <label>Kauf (Lamports)</label><input id="buyLamports" type="number" value="100000000" />
+      <button id="btnBuy">Kaufen</button>
+      <span class="muted">Erlaubt: 0.5–10 SOL (Lamports)</span>
+    </div>
+    <div class="row">
+      <label>Verkauf (DMD, ganzzahlig)</label><input id="sellAmount" type="number" value="1000" />
+      <button id="btnSell">Verkaufen</button>
+    </div>
+    <div class="row">
+      <button id="btnClaim">Rewards claimen</button>
+    </div>
+    <div class="muted">Trader sehen Claim ggf. ausgeblendet; On-Chain wird Whitelist/Haltezeit geprüft.</div>
+  </div>
+
+  <div class="card">
+    <h3>Protokoll</h3>
+    <div id="log">Bereit.</div>
+    <p class="muted">⚠️ Aktuelle On-Chain-Logik verlangt bei <b>buy_dmd</b> zusätzlich die Founder-Signatur. Für öffentliche Käufe bitte später Authority → PDA umstellen.</p>
+  </div>
+</div>
+
+<script>
+(()=> {
+  const web3 = window.solanaWeb3, anchor = window.anchor;
+  const ui = {
+    rpc:rpc, programId:programId, mint:mint, founderPk:founderPk, treasuryPk:treasuryPk,
+    btnSetRpc:btnSetRpc, btnDetect:btnDetect, detected:detected, btnConnect:btnConnect, walletLabel:walletLabel,
+    btnRole:btnRole, roleBadge:roleBadge, btnShowPdas:btnShowPdas, pdas:pdas,
+    adminCard:adminCard, wlAddress:wlAddress, wlStatus:wlStatus, btnWhitelistAdd:btnWhitelistAdd,
+    btnOpenSale:btnOpenSale, btnCloseSale:btnCloseSale, btnInitialize:btnInitialize, initPrice:initPrice,
+    buyLamports:buyLamports, btnBuy:btnBuy, sellAmount:sellAmount, btnSell:btnSell, btnClaim:btnClaim, log:log
+  };
+
+  let connection = new web3.Connection(ui.rpc.value.trim(),"confirmed");
+  let wallet=null, provider=null, program=null;
+
+  const ASSOCIATED_TOKEN_PROGRAM_ID = new web3.PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+  const TOKEN_PROGRAM_ID = new web3.PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+
+  const pk = (s)=> new web3.PublicKey(s.trim());
+  const short=(s)=> s.slice(0,4)+"..."+s.slice(-4);
+  const getPid=()=> pk(ui.programId.value), getMint=()=> pk(ui.mint.value), getFounder=()=> pk(ui.founderPk.value), getTreasury=()=> pk(ui.treasuryPk.value);
+
+  function logMsg(...a){ const s=a.map(x=>typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); ui.log.textContent+="\n"+s; ui.log.scrollTop=ui.log.scrollHeight; console.log(...a); }
+
+  const vaultPda=()=> web3.PublicKey.findProgramAddressSync([Buffer.from("vault")], getPid());
+  const buyerPda=(buyer)=> web3.PublicKey.findProgramAddressSync([Buffer.from("buyer"), vaultPda()[0].toBuffer(), buyer.toBuffer()], getPid());
+  const ata = (owner,mint)=> web3.PublicKey.findProgramAddressSync([owner.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()], ASSOCIATED_TOKEN_PROGRAM_ID)[0];
+
+  function detectWallets(){
+    const hasPh=!!window.solana?.isPhantom, hasSf=!!window.solflare, hasBg=!!window.bitkeep?.solana;
+    ui.detected.textContent=`Phantom:${hasPh?'✅':'—'} Solflare:${hasSf?'✅':'—'} Bitget:${hasBg?'✅':'—'}`;
+  }
+
+  async function connect(){
+    try{
+      if (window.solana?.isPhantom){ wallet=window.solana; await wallet.connect(); }
+      else if (window.solflare){ wallet=window.solflare; await wallet.connect(); }
+      else if (window.bitkeep?.solana){ wallet=window.bitkeep.solana; await wallet.connect(); }
+      else throw new Error("Keine kompatible Wallet gefunden.");
+      ui.walletLabel.innerHTML=`Verbunden: <b>${short(wallet.publicKey.toBase58())}</b>`;
+      provider=new anchor.AnchorProvider(connection,{
+        publicKey:wallet.publicKey,
+        signTransaction:(tx)=>wallet.signTransaction(tx),
+        signAllTransactions:(txs)=>wallet.signAllTransactions(txs)
+      },{commitment:"confirmed"});
+      anchor.setProvider(provider);
+      program=null;
+      await updateRoleUI();
+    }catch(e){ logMsg("Connect Fehler:", e.message||e); }
+  }
+
+  async function ensureProgram(){
+    if (!provider) throw new Error("Wallet verbinden.");
+    if (program) return program;
+    const idl = await anchor.Program.fetchIdl(getPid(), provider);
+    if (!idl) throw new Error("IDL nicht gefunden (on-chain).");
+    program = new anchor.Program(idl, getPid(), provider);
+    logMsg("IDL geladen ✅");
+    return program;
+  }
+
+  async function updateRoleUI(){
+    const isFounder = wallet && wallet.publicKey.toBase58()===getFounder().toBase58();
+    ui.roleBadge.textContent = isFounder ? "FOUNDER" : "USER";
+    ui.adminCard.style.display = isFounder ? "block" : "none";
+  }
+
+  async function showPdas(){
+    const [v,b]=vaultPda(); const buyer=wallet?.publicKey; const bs = buyer? buyerPda(buyer)[0].toBase58() : "Wallet verbinden";
+    ui.pdas.textContent=`Vault: ${v.toBase58()} (bump ${b}) | BuyerState: ${bs}`;
+  }
+
+  // --- Founder: initialize / toggle / whitelist ---
+  async function initializeVault(){
+    try{
+      await ensureProgram();
+      if (wallet.publicKey.toBase58()!==getFounder().toBase58()) throw new Error("Nur Founder darf initialisieren.");
+      const [v]=vaultPda();
+      const founder=wallet.publicKey;
+      const mint=getMint();
+      const founderAta=ata(founder,mint);
+      const [buyerState]=buyerPda(founder);
+      const price = BigInt(ui.initPrice.value||"0");
+      const sig = await program.methods.initialize(new anchor.BN(price.toString())).accounts({
+        vault:v, buyerState:buyerState, founder, mint, founderTokenAccount:founderAta,
+        tokenProgram:TOKEN_PROGRAM_ID, systemProgram:web3.SystemProgram.programId
+      }).rpc();
+      logMsg("Initialize Tx:", sig);
+    }catch(e){ logMsg("Initialize Fehler:", e.message||e); }
+  }
+
+  async function toggleSale(active){
+    try{
+      await ensureProgram();
+      if (wallet.publicKey.toBase58()!==getFounder().toBase58()) throw new Error("Nur Founder darf togglen.");
+      const [v]=vaultPda();
+      const sig = await program.methods.togglePublicSale(active).accounts({ vault:v, founder:wallet.publicKey }).rpc();
+      logMsg(`Public Sale ${active?'ON':'OFF'} →`, sig);
+    }catch(e){ logMsg("Toggle Fehler:", e.message||e); }
+  }
+
+  async function whitelistSet(){
+    try{
+      await ensureProgram();
+      if (wallet.publicKey.toBase58()!==getFounder().toBase58()) throw new Error("Nur Founder darf whitelisten.");
+      const who = new web3.PublicKey(ui.wlAddress.value.trim());
+      const [v]=vaultPda();
+      const [bs]=buyerPda(who);
+      const status = ui.wlStatus.value==="true";
+      const sig = await program.methods.whitelistAdd(status).accounts({
+        vault:v, buyer:who, buyerState:bs, founder:wallet.publicKey, systemProgram:web3.SystemProgram.programId
+      }).rpc();
+      logMsg("Whitelist Tx:", sig);
+    }catch(e){ logMsg("Whitelist Fehler:", e.message||e); }
+  }
+
+  // --- User: buy / sell / claim ---
+  async function buy(){
+    try{
+      await ensureProgram();
+      const [v]=vaultPda();
+      const buyer=wallet.publicKey;
+      const mint=getMint();
+      const buyerAta=ata(buyer,mint);
+      const founder=getFounder();
+      const founderAta=ata(founder,mint);
+      const treasury=getTreasury();
+
+      // Buyer-ATA anlegen falls fehlt
+      const info = await connection.getAccountInfo(buyerAta);
+      const pre = [];
+      if (!info){
+        const keys=[
+          {pubkey: buyer, isSigner:true, isWritable:true},
+          {pubkey: buyerAta, isSigner:false,isWritable:true},
+          {pubkey: buyer, isSigner:false,isWritable:false},
+          {pubkey: mint, isSigner:false,isWritable:false},
+          {pubkey: web3.SystemProgram.programId, isSigner:false,isWritable:false},
+          {pubkey: TOKEN_PROGRAM_ID, isSigner:false,isWritable:false},
+          {pubkey: web3.SYSVAR_RENT_PUBKEY, isSigner:false,isWritable:false},
+        ];
+        pre.push(new web3.TransactionInstruction({programId:ASSOCIATED_TOKEN_PROGRAM_ID,keys,data:Buffer.alloc(0)}));
+      }
+
+      const lamports = BigInt(ui.buyLamports.value||"0");
+      if (lamports<=0n) throw new Error("Lamports > 0 erforderlich.");
+      // ⚠️ Founder muss mitsinieren (On-Chain-Anforderung)
+      if (buyer.toBase58()!==getFounder().toBase58()) {
+        logMsg("WARNUNG: buy_dmd erfordert zusätzlich Founder-Signatur – normale Nutzer können ohne Relayer/PDA-Authority nicht kaufen.");
+      }
+
+      const [bs]=buyerPda(buyer);
+      const sig = await program.methods.buyDmd(new anchor.BN(lamports.toString())).accounts({
+        vault:v, buyerState:bs, founder, treasury, founderTokenAccount:founderAta,
+        buyerTokenAccount:buyerAta, buyer, tokenProgram:TOKEN_PROGRAM_ID, systemProgram:web3.SystemProgram.programId
+      }).preInstructions(pre).rpc();
+      logMsg("Buy Tx:", sig);
+    }catch(e){ logMsg("Buy Fehler:", e.message||e); }
+  }
+
+  async function sell(){
+    try{
+      await ensureProgram();
+      const [v]=vaultPda(); const buyer=wallet.publicKey; const [bs]=buyerPda(buyer);
+      const amt = BigInt(ui.sellAmount.value||"0"); if (amt<=0n) throw new Error("Menge > 0 erforderlich.");
+      const sig = await program.methods.sellDmd(new anchor.BN(amt.toString())).accounts({ vault:v, buyerState:bs, buyer }).rpc();
+      logMsg("Sell Tx:", sig);
+    }catch(e){ logMsg("Sell Fehler:", e.message||e); }
+  }
+
+  async function claim(){
+    try{
+      await ensureProgram();
+      const [v]=vaultPda(); const buyer=wallet.publicKey; const [bs]=buyerPda(buyer);
+      const sig = await program.methods.claimReward().accounts({ vault:v, buyerState:bs, buyer }).rpc();
+      logMsg("Claim Tx:", sig);
+    }catch(e){ logMsg("Claim Fehler:", e.message||e); }
+  }
+
+  // UI wiring
+  btnSetRpc.onclick=()=>{ connection=new web3.Connection(ui.rpc.value.trim(),"confirmed"); if (provider) provider.connection=connection; program=null; logMsg("RPC gesetzt:", ui.rpc.value.trim()); };
+  btnDetect.onclick=detectWallets;
+  btnConnect.onclick=connect;
+  btnRole.onclick=updateRoleUI;
+  btnShowPdas.onclick=showPdas;
+  btnInitialize.onclick=initializeVault;
+  btnOpenSale.onclick=()=>toggleSale(true);
+  btnCloseSale.onclick=()=>toggleSale(false);
+  btnWhitelistAdd.onclick=whitelistSet;
+  btnBuy.onclick=buy; btnSell.onclick=sell; btnClaim.onclick=claim;
+
+  detectWallets();
+})();
+</script>
+</body>
+</html>
